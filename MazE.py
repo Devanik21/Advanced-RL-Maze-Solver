@@ -250,6 +250,17 @@ with st.sidebar.expander("3. Training Configuration", expanded=True):
 
 train_button = st.sidebar.button("Train Agent", use_container_width=True, type="primary")
 
+st.sidebar.divider()
+
+if st.sidebar.button("Clear Memory & Reset", use_container_width=True):
+    keys_to_clear = ['maze_data', 'agent', 'training_history']
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.cache_data.clear()
+    st.toast("Memory and cache cleared!", icon="🧼")
+    st.rerun()
+
 # --- Main Area ---
 
 if 'maze_data' not in st.session_state:
