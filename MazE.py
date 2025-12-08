@@ -167,6 +167,7 @@ class AdvancedMazeAgent:
 
     def train_episode(self, max_steps=500):
         state = self.start_new_episode()
+        action = self.choose_action(state)
         total_reward, steps = 0, 0
         
         for step in range(max_steps):
