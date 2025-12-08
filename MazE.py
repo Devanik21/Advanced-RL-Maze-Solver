@@ -169,6 +169,7 @@ class AdvancedMazeAgent:
         state = self.start_new_episode()
         action = self.choose_action(state)
         total_reward, steps = 0, 0
+        path_taken = [state]
         
         for step in range(max_steps):
             next_state = self.get_next_state(state, action)
@@ -195,19 +196,19 @@ class AdvancedMazeAgent:
             steps += 1
             state = next_state
             action = next_action
+            path_taken.append(state)
             
             if state == self.end:
-                self.heuristic_states.append(self.start) # Add successful start
                 break
         
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         
         success = state == self.end
-        if success and len(self.heuristic_states) < 200: # Limit heuristic states
+        if success:
             # Add states from the successful path to the heuristic list
-            # path is not tracked here, but we can add the state before the end
-            pass # This logic is implicitly handled by starting near goal
-
+            for path_state in path_taken:
+                if len(self.heuristic_states) < 500: # Limit heuristic states
+                    self.heuristic_states.append(path_state)
         self.episode_rewards.append(total_reward)
         self.episode_steps.append(steps)
         self.episode_success.append(success)
@@ -215,7 +216,7 @@ class AdvancedMazeAgent:
         return total_reward, steps, success
 
     def start_new_episode(self):
-        if self.heuristic_states and random.random() < 0.3: # 30% chance to start near goal
+        if self.heuristic_states and random.random() < 0.4: # 40% chance to start from a known good state
             return random.choice(self.heuristic_states)
         return self.start
 
