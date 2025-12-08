@@ -325,19 +325,38 @@ else:
     with col2:
         if train_button:
             st.subheader("Training in Progress...")
-            status_text = st.empty()
+            status_container = st.empty()
             progress_bar = st.progress(0)
             
             consecutive_successes = 0
+            total_successes = 0
+            recent_successes = deque(maxlen=100) # For success rate over last 100
+
             for episode in range(1, episodes + 1):
                 reward, steps, success = agent.train_episode(max_steps)
                 
                 if success:
                     consecutive_successes += 1
+                    total_successes += 1
                 else:
                     consecutive_successes = 0
 
-                status_text.text(f"Episode {episode}/{episodes} | Success: {success} | Steps: {steps} | Epsilon: {agent.epsilon:.3f}")
+                recent_successes.append(success)
+                success_rate = sum(recent_successes) / len(recent_successes) if recent_successes else 0.0
+
+                # Update the status dashboard
+                status_markdown = f"""
+                | Parameter | Value |
+                |---|---|
+                | **Episode** | `{episode}` / `{episodes}` |
+                | **Epsilon (ε)** | `{agent.epsilon:.4f}` |
+                | **Q-Table Size** | `{len(agent.q_table)}` |
+                | **Last Episode Success** | `{'✅ True' if success else '❌ False'}` |
+                | **Last Episode Steps** | `{steps}` |
+                | **Success Rate (last 100)** | `{success_rate:.2%}` |
+                | **Consecutive Successes** | `{consecutive_successes}` / `{early_stop_count}` |
+                """
+                status_container.markdown(status_markdown)
                 progress_bar.progress(episode / episodes)
 
                 if consecutive_successes >= early_stop_count:
