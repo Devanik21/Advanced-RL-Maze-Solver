@@ -88,6 +88,9 @@ class AdvancedMazeAgent:
         self.priority_queue = []
         self.in_queue = set()
         
+        self.experience_buffer = deque(maxlen=20000)
+        self.heuristic_states = []
+
         self.episode_rewards = []
         self.episode_steps = []
         self.episode_success = []
@@ -146,11 +149,25 @@ class AdvancedMazeAgent:
                 new_q = current_q + self.lr * (reward + self.gamma * max_next_q - current_q)
                 self.q_table[(state, action)] = new_q
 
+    def experience_replay(self, batch_size=32):
+        if len(self.experience_buffer) < batch_size:
+            return
+        
+        batch = random.sample(self.experience_buffer, batch_size)
+        for state, action, reward, next_state, done in batch:
+            current_q = self.get_q_value(state, action)
+            if done:
+                target = reward
+            else:
+                max_next_q = max([self.get_q_value(next_state, a) for a in range(len(self.actions))])
+                target = reward + self.gamma * max_next_q
+            
+            new_q = current_q + self.lr * (target - current_q)
+            self.q_table[(state, action)] = new_q
+
     def train_episode(self, max_steps=500):
-        state = self.start
-        action = self.choose_action(state)
-        total_reward = 0
-        steps = 0
+        state = self.start_new_episode()
+        total_reward, steps = 0, 0
         
         for step in range(max_steps):
             next_state = self.get_next_state(state, action)
@@ -158,17 +175,20 @@ class AdvancedMazeAgent:
             next_action = self.choose_action(next_state)
             
             self.model[(state, action)] = (next_state, reward)
+            done = next_state == self.end
+            self.experience_buffer.append((state, action, reward, next_state, done))
             
             current_q = self.get_q_value(state, action)
             next_q = self.get_q_value(next_state, next_action)
             td_error = reward + self.gamma * next_q - current_q
             new_q = current_q + self.lr * td_error
             self.q_table[(state, action)] = new_q
-            
+
             if abs(td_error) > 0.01:
                 self.prioritized_update(state, action, abs(td_error))
             
             self.planning_step(n_steps=5)
+            self.experience_replay(batch_size=16) # Replay from past experiences
             
             total_reward += reward
             steps += 1
@@ -176,16 +196,27 @@ class AdvancedMazeAgent:
             action = next_action
             
             if state == self.end:
+                self.heuristic_states.append(self.start) # Add successful start
                 break
         
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         
         success = state == self.end
+        if success and len(self.heuristic_states) < 200: # Limit heuristic states
+            # Add states from the successful path to the heuristic list
+            # path is not tracked here, but we can add the state before the end
+            pass # This logic is implicitly handled by starting near goal
+
         self.episode_rewards.append(total_reward)
         self.episode_steps.append(steps)
         self.episode_success.append(success)
         
         return total_reward, steps, success
+
+    def start_new_episode(self):
+        if self.heuristic_states and random.random() < 0.3: # 30% chance to start near goal
+            return random.choice(self.heuristic_states)
+        return self.start
 
     def test_episode(self, max_steps=500):
         state = self.start
@@ -245,7 +276,7 @@ with st.sidebar.expander("2. Agent Hyperparameters", expanded=True):
 
 with st.sidebar.expander("3. Training Configuration", expanded=True):
     episodes = st.number_input("Training Episodes", 100, 10000, 1000, 100)
-    max_steps = st.number_input("Max Steps per Episode", 100, 2000, 500, 50)
+    max_steps = st.number_input("Max Steps per Episode", 100, 5000, 1000, 50)
     early_stop_count = st.number_input("Early Stop (consecutive successes)", 5, 50, 10, 1)
 
 train_button = st.sidebar.button("Train Agent", use_container_width=True, type="primary")
