@@ -17,7 +17,7 @@ st.set_page_config(
     page_icon="🤖"
 )
 
-st.title("🤖 Advanced RL Maze Solver")
+st.title("♾️Advanced RL Maze Solver")
 st.markdown("""
 This application demonstrates a Reinforcement Learning agent using **SARSA with Prioritized Sweeping** to solve guaranteed-solvable mazes.
 
