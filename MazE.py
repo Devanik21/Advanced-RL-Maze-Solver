@@ -75,6 +75,10 @@ class AdvancedMazeAgent:
         self.end = end
         self.h, self.w = maze.shape
         
+        # --- MAGIC UPDATE: Pre-compute the true distance to end for every cell ---
+        self.distance_map = self._compute_distance_map()
+        # -----------------------------------------------------------------------
+
         self.lr = lr
         self.gamma = gamma
         self.epsilon = 1.0
@@ -82,7 +86,7 @@ class AdvancedMazeAgent:
         self.epsilon_decay = epsilon_decay
         
         self.q_table = {}
-        self.init_q_value = 10.0
+        self.init_q_value = 0.0 # Changed to 0 for better stability with new rewards
         self.actions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         self.model = {}
         self.priority_queue = []
@@ -94,6 +98,32 @@ class AdvancedMazeAgent:
         self.episode_rewards = []
         self.episode_steps = []
         self.episode_success = []
+
+    def _compute_distance_map(self):
+        """
+        Uses BFS to calculate the exact number of steps from every cell to the goal.
+        This creates a 'gradient' for the agent to follow.
+        """
+        d_map = np.full((self.h, self.w), fill_value=np.inf)
+        d_map[self.end] = 0
+        queue = deque([self.end])
+        
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        
+        while queue:
+            cy, cx = queue.popleft()
+            current_dist = d_map[cy, cx]
+            
+            for dy, dx in directions:
+                ny, nx = cy + dy, cx + dx
+                
+                # Check bounds and walls (0 is path, 1 is wall)
+                if 0 <= ny < self.h and 0 <= nx < self.w:
+                    if self.maze[ny, nx] == 0:
+                        if d_map[ny, nx] == np.inf:
+                            d_map[ny, nx] = current_dist + 1
+                            queue.append((ny, nx))
+        return d_map
 
     def get_q_value(self, state, action):
         return self.q_table.get((state, action), self.init_q_value)
@@ -118,13 +148,23 @@ class AdvancedMazeAgent:
 
     def get_reward(self, state, next_state):
         if next_state == self.end:
-            return 1000
-        elif state == next_state:
-            return -10
-        else:
-            old_dist = abs(state[0] - self.end[0]) + abs(state[1] - self.end[1])
-            new_dist = abs(next_state[0] - self.end[0]) + abs(next_state[1] - self.end[1])
-            return 10 * (old_dist - new_dist) - 1
+            return 100.0  # Big reward for solving
+        
+        if state == next_state:
+            return -5.0  # Punishment for hitting a wall
+            
+        # Get true distances from our magic map
+        current_dist = self.distance_map[state]
+        next_dist = self.distance_map[next_state]
+        
+        # MAGIC: The reward is simply the improvement in true distance
+        # If we moved closer to goal (diff is positive), we get + reward
+        # If we moved away (diff is negative), we get - reward
+        diff = current_dist - next_dist
+        
+        # We multiply by a factor (e.g., 2.0) to make the signal strong
+        # We subtract a small 'step cost' (0.1) to encourage speed
+        return (2.0 * diff) - 0.1
 
     def prioritized_update(self, state, action, priority, max_queue_size=1000):
         if (state, action) not in self.in_queue:
