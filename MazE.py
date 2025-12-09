@@ -7,6 +7,10 @@ import random
 from heapq import heappush, heappop
 import pandas as pd
 
+import json
+import zipfile
+import io
+import ast  # To safely convert string keys back to tuples
 # ============================================================================
 # Page Config and Initial Setup
 # ============================================================================
@@ -286,10 +290,110 @@ class AdvancedMazeAgent:
         
         return state == self.end, path
 
+
+
+# ============================================================================
+# Save/Load Utility Functions
+# ============================================================================
+
+def serialize_q_table(q_table):
+    """
+    JSON only supports string keys. We must convert our tuple keys 
+    ((y, x), action_idx) into strings.
+    """
+    serialized = {}
+    for key, value in q_table.items():
+        # Convert tuple key to string representation
+        serialized[str(key)] = value 
+    return serialized
+
+def deserialize_q_table(serialized_q):
+    """
+    Convert string keys back to actual tuples for the Python code.
+    """
+    q_table = {}
+    for key_str, value in serialized_q.items():
+        # ast.literal_eval safely evaluates a string containing a Python literal
+        key_tuple = ast.literal_eval(key_str)
+        q_table[key_tuple] = value
+    return q_table
+
+def create_brain_zip(agent, maze_data):
+    # 1. Prepare Agent Data
+    agent_state = {
+        "q_table": serialize_q_table(agent.q_table),
+        "epsilon": agent.epsilon,
+        "lr": agent.lr,
+        "gamma": agent.gamma,
+        "model": {str(k): v for k, v in agent.model.items()}, # Model also uses tuple keys
+        "episode_rewards": agent.episode_rewards,
+        "episode_steps": agent.episode_steps,
+        "episode_success": agent.episode_success
+    }
+    
+    # 2. Prepare Maze Data (Convert numpy to list for JSON)
+    env_state = {
+        "maze": maze_data['maze'].tolist(),
+        "start": maze_data['start'],
+        "end": maze_data['end'],
+        "width": maze_data['maze'].shape[1],
+        "height": maze_data['maze'].shape[0]
+    }
+
+    # 3. Write to Zip in Memory
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("agent_brain.json", json.dumps(agent_state))
+        zf.writestr("world_map.json", json.dumps(env_state))
+    
+    buffer.seek(0)
+    return buffer
+
+def load_brain_from_zip(uploaded_file):
+    try:
+        with zipfile.ZipFile(uploaded_file, "r") as zf:
+            # Load JSONs
+            agent_json = zf.read("agent_brain.json")
+            env_json = zf.read("world_map.json")
+            
+            agent_state = json.loads(agent_json)
+            env_state = json.loads(env_json)
+            
+            # Reconstruct Maze
+            maze = np.array(env_state["maze"])
+            start = tuple(env_state["start"])
+            end = tuple(env_state["end"])
+            
+            maze_data = {"maze": maze, "start": start, "end": end}
+            
+            # Reconstruct Agent
+            # We initialize a new agent, then overwrite its brain
+            new_agent = AdvancedMazeAgent(
+                maze, start, end, 
+                agent_state['lr'], agent_state['gamma'], 
+                0.9995, 0.01 # These defaults will be overwritten or ignored
+            )
+            
+            # Restore the brain
+            new_agent.q_table = deserialize_q_table(agent_state['q_table'])
+            new_agent.model = deserialize_q_table(agent_state['model'])
+            new_agent.epsilon = agent_state['epsilon']
+            new_agent.episode_rewards = agent_state['episode_rewards']
+            new_agent.episode_steps = agent_state['episode_steps']
+            new_agent.episode_success = agent_state['episode_success']
+            
+            return maze_data, new_agent, agent_state
+    except Exception as e:
+        st.error(f"Corrupted Brain File: {e}")
+        return None, None, None
+
+
+
 # ============================================================================
 # Streamlit UI and Logic
 # ============================================================================
 
+# --- Sidebar Controls ---
 # --- Sidebar Controls ---
 st.sidebar.header("⚙️ Universe Controls")
 
@@ -320,9 +424,46 @@ with st.sidebar.expander("3. Training Configuration", expanded=True):
     max_steps = st.number_input("Max Steps per Episode", 100, 5000, 1000, 50)
     early_stop_count = st.number_input("Early Stop (consecutive successes)", 5, 50, 10, 1)
 
+# --- NEW SECTION STARTS HERE ---
+with st.sidebar.expander("4. Brain Storage (Save/Load)", expanded=False):
+    st.markdown("Download your agent's brain to disk and reload it later.")
+    
+    # DOWNLOAD LOGIC
+    if 'agent' in st.session_state and st.session_state.agent is not None:
+        zip_buffer = create_brain_zip(st.session_state.agent, st.session_state.maze_data)
+        st.download_button(
+            label="💾 Download Agent Brain (.zip)",
+            data=zip_buffer,
+            file_name="my_ai_brain.zip",
+            mime="application/zip",
+            use_container_width=True
+        )
+    else:
+        st.warning("Train or Create an agent first to download.")
+
+    # UPLOAD LOGIC
+    uploaded_file = st.file_uploader("Upload Brain (.zip)", type="zip")
+    if uploaded_file is not None:
+        if st.button("Load Brain & Map", use_container_width=True):
+            loaded_maze_data, loaded_agent, raw_state = load_brain_from_zip(uploaded_file)
+            if loaded_maze_data:
+                st.session_state.maze_data = loaded_maze_data
+                st.session_state.agent = loaded_agent
+                
+                # Restore history for the graph
+                st.session_state.training_history = {
+                    'rewards': raw_state['episode_rewards'],
+                    'steps': raw_state['episode_steps'],
+                    'success': raw_state['episode_success']
+                }
+                st.toast("Brain and Map Restored Successfully!", icon="🧠")
+                st.rerun()
+# --- NEW SECTION ENDS HERE ---
+
 train_button = st.sidebar.button("Train Agent", use_container_width=True, type="primary")
 
 st.sidebar.divider()
+# ... (Keep your Clear Memory button logic here)
 
 if st.sidebar.button("Clear Memory & Reset", use_container_width=True):
     keys_to_clear = ['maze_data', 'agent', 'training_history']
