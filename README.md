@@ -1,4 +1,4 @@
-# **RL Maze Solver **
+# **RL Maze Solver**
 
 ## **1. Overview**
 
