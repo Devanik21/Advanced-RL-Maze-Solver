@@ -426,6 +426,7 @@ with st.sidebar.expander("3. Training Configuration", expanded=True):
     episodes = st.number_input("Training Episodes", 100, 10000, 1000, 100)
     max_steps = st.number_input("Max Steps per Episode", 100, 5000, 1000, 50)
     early_stop_count = st.number_input("Early Stop (consecutive successes)", 5, 50, 10, 1)
+    vis_freq = st.number_input("Live Visualization Frequency (Episodes)", min_value=1, value=50, help="Update the maze plot every N episodes. Lower = cooler visuals but slower training.")
 
 # --- NEW SECTION STARTS HERE ---
 with st.sidebar.expander("4. Brain Storage (Save/Load)", expanded=False):
@@ -507,6 +508,9 @@ else:
         st.pyplot(fig)
 
     with col2:
+        # Create a placeholder for the live plot at the top
+        plot_placeholder = st.empty()
+        
         if train_button:
             st.subheader("Training in Progress...")
             status_container = st.empty()
@@ -514,11 +518,13 @@ else:
             
             consecutive_successes = 0
             total_successes = 0
-            recent_successes = deque(maxlen=100) # For success rate over last 100
+            recent_successes = deque(maxlen=100)
 
             for episode in range(1, episodes + 1):
+                # 1. Train on one episode
                 reward, steps, success = agent.train_episode(max_steps)
                 
+                # 2. Update stats
                 if success:
                     consecutive_successes += 1
                     total_successes += 1
@@ -528,17 +534,39 @@ else:
                 recent_successes.append(success)
                 success_rate = sum(recent_successes) / len(recent_successes) if recent_successes else 0.0
 
-                # Update the status dashboard
+                # 3. LIVE VISUALIZATION LOGIC
+                if episode % vis_freq == 0 or episode == 1:
+                    # Run a quick test (Greedy Policy) to see what the agent knows currently
+                    test_success, test_path = agent.test_episode(max_steps=maze.size)
+                    
+                    # Create the plot
+                    fig_live, ax_live = plt.subplots(figsize=(6, 6))
+                    vis_maze = maze.copy().astype(float)
+                    
+                    # Draw the path slightly faded
+                    path_y = [p[0] for p in test_path]
+                    path_x = [p[1] for p in test_path]
+                    
+                    ax_live.imshow(vis_maze, cmap='binary')
+                    ax_live.plot(path_x, path_y, 'b-', linewidth=2, alpha=0.7, label='Current Best Path')
+                    ax_live.plot(start[1], start[0], 'go', markersize=10)
+                    ax_live.plot(end[1], end[0], 'ro', markersize=10)
+                    ax_live.set_title(f"Episode {episode}: {'Solved!' if test_success else 'Searching...'}")
+                    ax_live.axis('off')
+                    
+                    # Update the placeholder with the new image
+                    plot_placeholder.pyplot(fig_live)
+                    plt.close(fig_live) # Clean up memory
+
+                # 4. Update the text stats
                 status_markdown = f"""
                 | Parameter | Value |
                 |---|---|
                 | **Episode** | `{episode}` / `{episodes}` |
                 | **Epsilon (ε)** | `{agent.epsilon:.4f}` |
-                | **Q-Table Size** | `{len(agent.q_table)}` |
-                | **Last Episode Success** | `{'✅ True' if success else '❌ False'}` |
-                | **Last Episode Steps** | `{steps}` |
-                | **Success Rate (last 100)** | `{success_rate:.2%}` |
-                | **Consecutive Successes** | `{consecutive_successes}` / `{early_stop_count}` |
+                | **Current Steps** | `{steps}` |
+                | **Success Rate** | `{success_rate:.2%}` |
+                | **Consecutive Wins** | `{consecutive_successes}` / `{early_stop_count}` |
                 """
                 status_container.markdown(status_markdown)
                 progress_bar.progress(episode / episodes)
@@ -547,12 +575,13 @@ else:
                     st.success(f"Early stopping triggered after {episode} episodes!")
                     break
             
+            # Save history
             st.session_state.training_history = {
                 'rewards': agent.episode_rewards,
                 'steps': agent.episode_steps,
                 'success': agent.episode_success
             }
-            st.rerun()
+            # We do NOT rerun here immediately so you can see the final state
 
         if 'training_history' in st.session_state and st.session_state.training_history:
             st.subheader("Training Performance")
