@@ -79,7 +79,7 @@ class AdvancedMazeAgent:
         self.end = end
         self.h, self.w = maze.shape
         
-        # --- Pre-compute the true distance to end ---
+        # --- MAGIC UPDATE: Pre-compute the true distance to end for every cell ---
         self.distance_map = self._compute_distance_map()
         # -----------------------------------------------------------------------
 
@@ -90,8 +90,7 @@ class AdvancedMazeAgent:
         self.epsilon_decay = epsilon_decay
         
         self.q_table = {}
-        # Optimization 1: Lower init value to prevent looping
-        self.init_q_value = -100.0 
+        self.init_q_value = 0.0 # Changed to 0 for better stability with new rewards
         self.actions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         self.model = {}
         self.priority_queue = []
@@ -103,22 +102,6 @@ class AdvancedMazeAgent:
         self.episode_rewards = []
         self.episode_steps = []
         self.episode_success = []
-
-        # --- OPTIMIZATION: HEURISTIC INITIALIZATION ---
-        # We pre-seed the Q-table so the agent knows the general direction immediately.
-        # This drastically cuts down training time for large mazes.
-        for y in range(self.h):
-            for x in range(self.w):
-                if self.maze[y, x] == 0: # If path
-                    curr_dist = self.distance_map[y, x]
-                    for idx, (dy, dx) in enumerate(self.actions):
-                        ny, nx = y + dy, x + dx
-                        if 0 <= ny < self.h and 0 <= nx < self.w and self.maze[ny, nx] == 0:
-                            next_dist = self.distance_map[ny, nx]
-                            # If this action takes us closer, give it a higher initial Q-value
-                            # We use negative distance because Q-Learning maximizes rewards
-                            # and we want the smallest distance (least negative).
-                            self.q_table[((y, x), idx)] = -1.0 * next_dist
 
     def _compute_distance_map(self):
         """
@@ -169,23 +152,23 @@ class AdvancedMazeAgent:
 
     def get_reward(self, state, next_state):
         if next_state == self.end:
-            return 1000.0  # Massive reward for solving
+            return 100.0  # Big reward for solving
         
         if state == next_state:
-            return -10.0  # Punishment for hitting a wall
+            return -5.0  # Punishment for hitting a wall
             
+        # Get true distances from our magic map
         current_dist = self.distance_map[state]
         next_dist = self.distance_map[next_state]
         
+        # MAGIC: The reward is simply the improvement in true distance
+        # If we moved closer to goal (diff is positive), we get + reward
+        # If we moved away (diff is negative), we get - reward
         diff = current_dist - next_dist
         
-        # OPTIMIZATION:
-        # 1. We keep the gradient reward (2.0 * diff)
-        # 2. We INCREASE the step cost from -0.1 to -0.5
-        # This forces the agent to stop wasting time on "ok" paths and find the "best" path.
-        step_cost = 0.5 
-        
-        return (5.0 * diff) - step_cost
+        # We multiply by a factor (e.g., 2.0) to make the signal strong
+        # We subtract a small 'step cost' (0.1) to encourage speed
+        return (2.0 * diff) - 0.1
 
     def prioritized_update(self, state, action, priority, max_queue_size=1000):
         if (state, action) not in self.in_queue:
@@ -415,8 +398,11 @@ def load_brain_from_zip(uploaded_file):
 st.sidebar.header("⚙️ Universe Controls")
 
 with st.sidebar.expander("1. Maze Generation", expanded=True):
-    maze_width = st.slider("Maze Width", 11, 101, 21, 2, help="Must be an odd number.")
-    maze_height = st.slider("Maze Height", 11, 101, 21, 2, help="Must be an odd number.")
+    # Changed from slider to number_input to allow infinite size
+    # We set min_value=2. The class automatically converts evens to odds, so no warning is needed.
+    maze_width = st.number_input("Maze Width", min_value=2, value=21, step=1)
+    maze_height = st.number_input("Maze Height", min_value=2, value=21, step=1)
+    
     if st.button("Generate New Maze", use_container_width=True):
         gen = MazeGenerator(width=maze_width, height=maze_height)
         maze, start, end = gen.generate()
