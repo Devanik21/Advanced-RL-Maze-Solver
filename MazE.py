@@ -103,6 +103,9 @@ class AdvancedMazeAgent:
         self.episode_rewards = []
         self.episode_steps = []
         self.episode_success = []
+        # --- GENIUS UPDATE: CURIOSITY MEMORY ---
+        self.visit_counts = {} # Tracks how many times we visited each state
+        # ---------------------------------------
 
     def _compute_distance_map(self):
         """
@@ -151,24 +154,35 @@ class AdvancedMazeAgent:
             return (ny, nx)
         return state
 
+    # Inside AdvancedMazeAgent class
     def get_reward(self, state, next_state):
         if next_state == self.end:
-            return 500.0  # Big reward for solving
+            return 500.0  # Jackpot!
         
         if state == next_state:
-            return -5.0  # Punishment for hitting a wall
+            return -5.0  # Wall penalty
             
-        # Get true distances from our magic map
         if self.use_heuristic:
-            # Easy Mode: Use the BFS distance map
+            # Easy Mode: The "Cheat" Map
             current_dist = self.distance_map[state]
             next_dist = self.distance_map[next_state]
             diff = current_dist - next_dist
             return (2.0 * diff) - 0.1
         else:
-            # Hard Mode: Pure RL (Sparse reward)
-            # Only a small penalty for taking a step to encourage shortest path
-            return -0.1
+            # --- GENIUS MODE (Hard Mode + Curiosity) ---
+            # 1. Base penalty for time (keeps it moving)
+            base_reward = -0.1 
+            
+            # 2. Curiosity Bonus
+            # If we've been here 0 times, count is 1. Bonus is large.
+            # If we've been here 100 times, bonus is tiny.
+            visit_count = self.visit_counts.get(next_state, 0) + 1
+            
+            # kappa is our curiosity strength. 0.5 is a good start.
+            kappa = 0.5 
+            intrinsic_reward = kappa / np.sqrt(visit_count)
+            
+            return base_reward + intrinsic_reward
 
     def prioritized_update(self, state, action, priority, max_queue_size=1000):
         if (state, action) not in self.in_queue:
@@ -211,11 +225,21 @@ class AdvancedMazeAgent:
 
     def train_episode(self, max_steps=500):
         state = self.start_new_episode()
+        # --- GENIUS UPDATE: Reset visit counts occasionally? ---
+        # Actually, for 'Curiosity', we usually keep counts across the whole training
+        # BUT for a maze solver, resetting counts every episode forces it to re-explore.
+        # Let's keep it SIMPLE: Count across the episode ONLY.
+        # This prevents the agent from getting permanently bored of the start area.
+        self.visit_counts = {} 
+        # -------------------------------------------------------
         action = self.choose_action(state)
         total_reward, steps = 0, 0
         
         for step in range(max_steps):
             next_state = self.get_next_state(state, action)
+            # --- GENIUS UPDATE: Count the visit ---
+            self.visit_counts[next_state] = self.visit_counts.get(next_state, 0) + 1
+            # --------------------------------------
             reward = self.get_reward(state, next_state)
             next_action = self.choose_action(next_state)
             
@@ -247,6 +271,7 @@ class AdvancedMazeAgent:
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         
         success = state == self.end
+        
         if success and len(self.heuristic_states) < 200: # Limit heuristic states
             # Add states from the successful path to the heuristic list
             # path is not tracked here, but we can add the state before the end
