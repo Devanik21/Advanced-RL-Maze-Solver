@@ -38,6 +38,7 @@ class MazeGenerator:
     def __init__(self, width=21, height=21):
         self.width = width if width % 2 == 1 else width + 1
         self.height = height if height % 2 == 1 else height + 1
+        
 
     def generate(self):
         maze = np.ones((self.height, self.width), dtype=int)
@@ -80,6 +81,8 @@ class AdvancedMazeAgent:
         self.end = end
         self.h, self.w = maze.shape
         self.use_heuristic = use_heuristic # Store the preference
+        self.curiosity_weight = 1.0  # Start full curiosity
+        self.curiosity_decay_rate = 0.99 # Slowly fade it out
         
         # We still compute it, but we might not use it in get_reward
         self.distance_map = self._compute_distance_map()
@@ -169,20 +172,22 @@ class AdvancedMazeAgent:
             diff = current_dist - next_dist
             return (2.0 * diff) - 0.1
         else:
-            # --- GENIUS MODE (Hard Mode + Curiosity) ---
-            # 1. Base penalty for time (keeps it moving)
-            base_reward = -0.1 
+            # --- GENIUS MODE (Pure RL + Intrinsic Motivation) ---
             
-            # 2. Curiosity Bonus
-            # If we've been here 0 times, count is 1. Bonus is large.
-            # If we've been here 100 times, bonus is tiny.
+            # 1. Get how many times we've been here (internal memory)
             visit_count = self.visit_counts.get(next_state, 0) + 1
             
-            # kappa is our curiosity strength. 0.5 is a good start.
-            kappa = 0.5 
-            intrinsic_reward = kappa / np.sqrt(visit_count)
+            # 2. Dynamic Penalty (Anti-Loitering)
+            # If we visit a cell too much, it becomes "painful" (-0.1 base - penalty)
+            # This forces the agent to RUN through known areas.
+            dynamic_penalty = -0.1 - (0.001 * visit_count)
             
-            return base_reward + intrinsic_reward
+            # 3. Curiosity Bonus (The "Fun" Factor)
+            # New places are fun! But fun decreases as we get serious (curiosity_weight)
+            kappa = 0.5 
+            intrinsic_reward = (kappa / np.sqrt(visit_count)) * self.curiosity_weight
+            
+            return dynamic_penalty + intrinsic_reward
 
     def prioritized_update(self, state, action, priority, max_queue_size=1000):
         if (state, action) not in self.in_queue:
@@ -256,7 +261,14 @@ class AdvancedMazeAgent:
             if abs(td_error) > 0.01:
                 self.prioritized_update(state, action, abs(td_error))
             
-            self.planning_step(n_steps=5)
+            # NEW TWEAK 3: Eureka Boost (Adaptive Planning)
+            # If we find a big reward (Goal) or a big Surprise (High Error), think harder!
+            if abs(td_error) > 1.0 or reward > 10:
+                self.planning_step(n_steps=50) # Super Brain Mode
+            else:
+                self.planning_step(n_steps=5)  # Normal Mode
+
+            
             self.experience_replay(batch_size=16) # Replay from past experiences
             
             total_reward += reward
@@ -269,6 +281,10 @@ class AdvancedMazeAgent:
                 break
         
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        
+        # NEW: Decay curiosity slightly. 
+        # As the agent gets older, it stops playing and starts working.
+        self.curiosity_weight = max(0.01, self.curiosity_weight * self.curiosity_decay_rate)
         
         success = state == self.end
         
