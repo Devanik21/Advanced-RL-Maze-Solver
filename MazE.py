@@ -429,8 +429,8 @@ with st.sidebar.expander("2. Agent Hyperparameters", expanded=True):
     epsilon_min = st.slider("Min Epsilon (ε)", 0.01, 0.2, 0.05, 0.01)
 
 with st.sidebar.expander("3. Training Configuration", expanded=True):
-    episodes = st.number_input("Training Episodes", 100, 10000, 1000, 100)
-    max_steps = st.number_input("Max Steps per Episode", 100, 5000, 1000, 50)
+    episodes = st.number_input("Training Episodes", 10, 1000000000, 1000, 100)
+    max_steps = st.number_input("Max Steps per Episode", 10, 500000000, 1000, 50)
     early_stop_count = st.number_input("Early Stop (consecutive successes)", 5, 50, 10, 1)
 
 # --- NEW SECTION STARTS HERE ---
