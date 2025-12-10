@@ -265,30 +265,36 @@ class AdvancedMazeAgent:
 
     def test_episode(self, max_steps=500):
         state = self.start
-        path = [state]
+        path = [(state, 'start')] # Store (state, move_type)
         steps = 0
         visited = {state}
         
         for step in range(max_steps):
             action = self.choose_action(state, training=False)
             next_state = self.get_next_state(state, action)
+            move_type = 'good' # Assume a good move
             
             if next_state in visited and next_state != self.end:
+                move_type = 'suboptimal' # It's a mistake to revisit a cell
                 q_values = [self.get_q_value(state, a) for a in range(len(self.actions))]
                 q_values[action] = float('-inf')
                 if max(q_values) > float('-inf'):
                     action = q_values.index(max(q_values))
-                    next_state = self.get_next_state(state, action)
+                    corrected_next_state = self.get_next_state(state, action)
+                    if corrected_next_state == next_state: # Failed to correct, stuck in a loop
+                        move_type = 'bad'
+                    next_state = corrected_next_state
+                else: # No other option, truly stuck
+                    move_type = 'bad'
             
-            path.append(next_state)
+            path.append((next_state, move_type))
             visited.add(next_state)
             steps += 1
             state = next_state
             
             if state == self.end:
                 break
-        
-        return state == self.end, path
+        return state == self.end, [p[0] for p in path], [p[1] for p in path]
 
 
 
@@ -601,23 +607,32 @@ else:
         st.subheader("Agent Testing")
         if st.button("Run Test & Visualize Path", use_container_width=True):
             with st.spinner("Agent is solving the maze..."):
-                success, path = agent.test_episode(max_steps=maze.size)
+                success, path, move_types = agent.test_episode(max_steps=maze.size)
             
             if success:
                 st.success(f"Agent found the solution in {len(path)-1} steps!")
             else:
                 st.error(f"Agent failed to find the solution after {len(path)-1} steps.")
 
-            # Visualization
+            # Visualization with colored path segments
             fig, ax = plt.subplots(figsize=(10, 10))
             ax.imshow(maze, cmap='binary') # Show maze structure
 
-            path_y = [p[0] for p in path]
-            path_x = [p[1] for p in path]
-            ax.plot(path_x, path_y, '-', color='#00FFFF', linewidth=2, alpha=0.8) # Cyan path
-            # Ensure start and end markers are visible on black
+            # Define colors for move types
+            color_map = {'good': 'darkgreen', 'suboptimal': 'darkblue', 'bad': 'darkred'}
+
+            # Plot each path segment with its corresponding color
+            for i in range(len(path) - 1):
+                p1 = path[i]
+                p2 = path[i+1]
+                move_type = move_types[i+1] # move_types corresponds to the state it leads to
+                color = color_map.get(move_type, 'darkblue')
+                ax.plot([p1[1], p2[1]], [p1[0], p2[0]], '-', color=color, linewidth=2, alpha=0.9)
+
+            # Plot Start and End markers
             ax.plot(start[1], start[0], 'go', markersize=15, label='Start') # Green start
             ax.plot(end[1], end[0], 'ro', markersize=15, label='End') # Red end
+            ax.legend()
 
             ax.set_title(f"Agent's Final Path ({'Success' if success else 'Failure'})", color='white')
             ax.axis('off')
