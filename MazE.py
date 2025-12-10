@@ -551,7 +551,7 @@ else:
                 progress_bar.progress(episode / episodes)
 
                 # Visualize path every 100 episodes
-                if episode % 100 == 0 or episode == 1:
+                if episode % 10 == 0 or episode == 1:
                     with vis_container.container():
                         st.write(f"Visualizing path at Episode {episode}...")
                         # Run a test episode to get the current path
