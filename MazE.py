@@ -557,11 +557,11 @@ else:
                         for i, (y, x) in enumerate(test_path):
                             vis_maze[y, x] = 0.3 + 0.4 * (i / len(test_path))
                         
-                        ax_vis.imshow(vis_maze, cmap='viridis', vmin=0, vmax=1)
+                        ax_vis.imshow(vis_maze, cmap='cividis', vmin=0, vmax=1)
                         path_y = [p[0] for p in test_path]
                         path_x = [p[1] for p in test_path]
-                        ax_vis.plot(path_x, path_y, 'r-', linewidth=1.5, alpha=0.8)
-                        ax_vis.set_title(f"Path at Episode {episode} ({'Success' if test_success else 'In Progress'})")
+                        ax_vis.plot(path_x, path_y, '-', color='#FF5733', linewidth=1.5, alpha=0.9)
+                        ax_vis.set_title(f"Path at Episode {episode} ({'Success' if test_success else 'In Progress'})", color='white')
                         ax_vis.axis('off')
                         st.pyplot(fig_vis)
 
@@ -613,12 +613,12 @@ else:
             for i, (y, x) in enumerate(path):
                 vis_maze[y, x] = 0.3 + 0.4 * (i / len(path))
             
-            ax.imshow(vis_maze, cmap='RdYlGn_r', vmin=0, vmax=1)
+            ax.imshow(vis_maze, cmap='plasma', vmin=0, vmax=1)
             path_y = [p[0] for p in path]
             path_x = [p[1] for p in path]
-            ax.plot(path_x, path_y, 'b-', linewidth=2, alpha=0.8)
+            ax.plot(path_x, path_y, '-', color='#00FFFF', linewidth=2, alpha=0.8) # Cyan path
             ax.plot(start[1], start[0], 'go', markersize=15, label='Start')
             ax.plot(end[1], end[0], 'ro', markersize=15, label='End')
-            ax.set_title(f"Agent's Final Path ({'Success' if success else 'Failure'})")
+            ax.set_title(f"Agent's Final Path ({'Success' if success else 'Failure'})", color='white')
             ax.axis('off')
             st.pyplot(fig)
