@@ -79,18 +79,25 @@ class AdvancedMazeAgent:
         self.end = end
         self.h, self.w = maze.shape
         
-        # --- MAGIC UPDATE: Pre-compute the true distance to end for every cell ---
+        # Keep your magic map (it is a good heuristic for valid mazes)
         self.distance_map = self._compute_distance_map()
-        # -----------------------------------------------------------------------
 
         self.lr = lr
         self.gamma = gamma
+        
+        # --- UPDATE: Boltzmann Temperature ---
+        # Controls how "curious" the agent is. High = crazy, Low = strict.
+        self.tau = 2.0 
+        self.tau_decay = 0.999
+        self.tau_min = 0.1
+        # -------------------------------------
+
         self.epsilon = 1.0
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         
         self.q_table = {}
-        self.init_q_value = 0.0 # Changed to 0 for better stability with new rewards
+        self.init_q_value = 0.0 
         self.actions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         self.model = {}
         self.priority_queue = []
@@ -133,13 +140,27 @@ class AdvancedMazeAgent:
         return self.q_table.get((state, action), self.init_q_value)
 
     def choose_action(self, state, training=True):
-        if training and random.random() < self.epsilon:
-            return random.choice(range(len(self.actions)))
+        # Get Q-values for all actions, defaulting to 0.0 if not known
+        q_values = np.array([self.get_q_value(state, a) for a in range(len(self.actions))])
         
-        q_values = [self.get_q_value(state, a) for a in range(len(self.actions))]
-        max_q = max(q_values)
-        best_actions = [i for i, q in enumerate(q_values) if q == max_q]
-        return random.choice(best_actions)
+        if not training:
+            # In testing, strictly choose the best action
+            max_q = np.max(q_values)
+            # Handle ties randomly to prevent getting stuck
+            best_actions = [i for i, q in enumerate(q_values) if q == max_q]
+            return random.choice(best_actions)
+        
+        # --- GENIUS UPGRADE: Boltzmann (Softmax) Exploration ---
+        # Instead of random epsilon, we use probability distribution
+        
+        # stabilize by subtracting max (prevents overflow)
+        preferences = q_values / self.tau
+        exp_preferences = np.exp(preferences - np.max(preferences))
+        probabilities = exp_preferences / np.sum(exp_preferences)
+        
+        # Choose action based on these probabilities
+        action = np.random.choice(range(len(self.actions)), p=probabilities)
+        return action
 
     def get_next_state(self, state, action_idx):
         dy, dx = self.actions[action_idx]
@@ -214,6 +235,9 @@ class AdvancedMazeAgent:
         action = self.choose_action(state)
         total_reward, steps = 0, 0
         
+        # Dynamic planning: Think more if the maze is complex
+        base_planning_steps = 10
+        
         for step in range(max_steps):
             next_state = self.get_next_state(state, action)
             reward = self.get_reward(state, next_state)
@@ -225,15 +249,23 @@ class AdvancedMazeAgent:
             
             current_q = self.get_q_value(state, action)
             next_q = self.get_q_value(next_state, next_action)
+            
+            # SARSA Update
             td_error = reward + self.gamma * next_q - current_q
             new_q = current_q + self.lr * td_error
             self.q_table[(state, action)] = new_q
 
-            if abs(td_error) > 0.01:
-                self.prioritized_update(state, action, abs(td_error))
-            
-            self.planning_step(n_steps=5)
-            self.experience_replay(batch_size=16) # Replay from past experiences
+            # If we are surprised (high error), plan more!
+            priority = abs(td_error)
+            if priority > 0.01:
+                self.prioritized_update(state, action, priority)
+                # Smart: If big error, think twice as hard this step
+                self.planning_step(n_steps=base_planning_steps + 5)
+            else:
+                self.planning_step(n_steps=base_planning_steps)
+
+            # Experience Replay (Dreaming)
+            self.experience_replay(batch_size=16) 
             
             total_reward += reward
             steps += 1
@@ -241,17 +273,13 @@ class AdvancedMazeAgent:
             action = next_action
             
             if state == self.end:
-                self.heuristic_states.append(self.start) # Add successful start
+                self.heuristic_states.append(self.start)
                 break
         
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        # Decay the temperature (become less chaotic over time)
+        self.tau = max(self.tau_min, self.tau * self.tau_decay)
         
         success = state == self.end
-        if success and len(self.heuristic_states) < 200: # Limit heuristic states
-            # Add states from the successful path to the heuristic list
-            # path is not tracked here, but we can add the state before the end
-            pass # This logic is implicitly handled by starting near goal
-
         self.episode_rewards.append(total_reward)
         self.episode_steps.append(steps)
         self.episode_success.append(success)
