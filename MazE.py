@@ -73,16 +73,17 @@ class MazeGenerator:
 # ============================================================================
 
 class AdvancedMazeAgent:
-    def __init__(self, maze, start, end, lr, gamma, epsilon_decay, epsilon_min):
+    # Update arguments to include use_heuristic
+    def __init__(self, maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic=True):
         self.maze = maze
         self.start = start
         self.end = end
         self.h, self.w = maze.shape
+        self.use_heuristic = use_heuristic # Store the preference
         
-        # --- MAGIC UPDATE: Pre-compute the true distance to end for every cell ---
+        # We still compute it, but we might not use it in get_reward
         self.distance_map = self._compute_distance_map()
-        # -----------------------------------------------------------------------
-
+        
         self.lr = lr
         self.gamma = gamma
         self.epsilon = 1.0
@@ -152,23 +153,22 @@ class AdvancedMazeAgent:
 
     def get_reward(self, state, next_state):
         if next_state == self.end:
-            return 100.0  # Big reward for solving
+            return 500.0  # Big reward for solving
         
         if state == next_state:
             return -5.0  # Punishment for hitting a wall
             
         # Get true distances from our magic map
-        current_dist = self.distance_map[state]
-        next_dist = self.distance_map[next_state]
-        
-        # MAGIC: The reward is simply the improvement in true distance
-        # If we moved closer to goal (diff is positive), we get + reward
-        # If we moved away (diff is negative), we get - reward
-        diff = current_dist - next_dist
-        
-        # We multiply by a factor (e.g., 2.0) to make the signal strong
-        # We subtract a small 'step cost' (0.1) to encourage speed
-        return (2.0 * diff) - 0.1
+        if self.use_heuristic:
+            # Easy Mode: Use the BFS distance map
+            current_dist = self.distance_map[state]
+            next_dist = self.distance_map[next_state]
+            diff = current_dist - next_dist
+            return (2.0 * diff) - 0.1
+        else:
+            # Hard Mode: Pure RL (Sparse reward)
+            # Only a small penalty for taking a step to encourage shortest path
+            return -0.1
 
     def prioritized_update(self, state, action, priority, max_queue_size=1000):
         if (state, action) not in self.in_queue:
@@ -427,6 +427,7 @@ with st.sidebar.expander("2. Agent Hyperparameters", expanded=True):
     gamma = st.slider("Discount Factor (γ)", 0.9, 0.999, 0.99, 0.001)
     epsilon_decay = st.slider("Epsilon Decay", 0.99, 0.9999, 0.9995, 0.0001, format="%.4f")
     epsilon_min = st.slider("Min Epsilon (ε)", 0.01, 0.2, 0.05, 0.01)
+    use_heuristic = st.checkbox("Use Magic Distance Map (Easy Mode)", value=True, help="Uncheck this to force the AI to learn without the distance hints!")
 
 with st.sidebar.expander("3. Training Configuration", expanded=True):
     episodes = st.number_input("Training Episodes", 10, 1000000000, 1000, 100)
@@ -494,8 +495,10 @@ else:
     end = maze_data['end']
 
     # Initialize or retrieve agent from session state
+    # Initialize or retrieve agent from session state
     if 'agent' not in st.session_state or st.session_state.agent is None:
-        st.session_state.agent = AdvancedMazeAgent(maze, start, end, lr, gamma, epsilon_decay, epsilon_min)
+        # Pass the toggle value here
+        st.session_state.agent = AdvancedMazeAgent(maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic)
 
     agent = st.session_state.agent
 
