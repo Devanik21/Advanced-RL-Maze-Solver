@@ -555,7 +555,7 @@ else:
                     with vis_container.container():
                         st.write(f"Visualizing path at Episode {episode}...")
                         # Run a test episode to get the current path
-                        test_success, test_path = agent.test_episode(max_steps=maze.size)
+                        test_success, test_path, _ = agent.test_episode(max_steps=maze.size)
 
                         # Visualization
                         fig_vis, ax_vis = plt.subplots(figsize=(6, 6))
