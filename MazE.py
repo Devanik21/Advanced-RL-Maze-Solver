@@ -510,6 +510,7 @@ else:
         if train_button:
             st.subheader("Training in Progress...")
             status_container = st.empty()
+            vis_container = st.empty()
             progress_bar = st.progress(0)
             
             consecutive_successes = 0
@@ -542,6 +543,27 @@ else:
                 """
                 status_container.markdown(status_markdown)
                 progress_bar.progress(episode / episodes)
+
+                # Visualize path every 100 episodes
+                if episode % 100 == 0 or episode == 1:
+                    with vis_container.container():
+                        st.write(f"Visualizing path at Episode {episode}...")
+                        # Run a test episode to get the current path
+                        test_success, test_path = agent.test_episode(max_steps=maze.size)
+
+                        # Visualization
+                        fig_vis, ax_vis = plt.subplots(figsize=(6, 6))
+                        vis_maze = maze.copy().astype(float)
+                        for i, (y, x) in enumerate(test_path):
+                            vis_maze[y, x] = 0.3 + 0.4 * (i / len(test_path))
+                        
+                        ax_vis.imshow(vis_maze, cmap='viridis', vmin=0, vmax=1)
+                        path_y = [p[0] for p in test_path]
+                        path_x = [p[1] for p in test_path]
+                        ax_vis.plot(path_x, path_y, 'r-', linewidth=1.5, alpha=0.8)
+                        ax_vis.set_title(f"Path at Episode {episode} ({'Success' if test_success else 'In Progress'})")
+                        ax_vis.axis('off')
+                        st.pyplot(fig_vis)
 
                 if consecutive_successes >= early_stop_count:
                     st.success(f"Early stopping triggered after {episode} episodes!")
