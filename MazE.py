@@ -552,15 +552,16 @@ else:
                         test_success, test_path = agent.test_episode(max_steps=maze.size)
 
                         # Visualization
-                        fig_vis, ax_vis = plt.subplots(figsize=(6, 6))
-                        vis_maze = maze.copy().astype(float)
-                        for i, (y, x) in enumerate(test_path):
-                            vis_maze[y, x] = 0.3 + 0.4 * (i / len(test_path))
-                        
-                        ax_vis.imshow(vis_maze, cmap='cividis', vmin=0, vmax=1)
+                        fig_vis, ax_vis = plt.subplots(figsize=(6, 6), facecolor='black') # Set figure background to black
+                        ax_vis.imshow(np.zeros_like(maze), cmap='gray', vmin=0, vmax=1) # All black maze background
+
                         path_y = [p[0] for p in test_path]
                         path_x = [p[1] for p in test_path]
                         ax_vis.plot(path_x, path_y, '-', color='#FF5733', linewidth=1.5, alpha=0.9)
+                        # Add start and end markers on top of the black background
+                        ax_vis.plot(start[1], start[0], 'o', color='lime', markersize=8, label='Start')
+                        ax_vis.plot(end[1], end[0], 'o', color='red', markersize=8, label='End')
+
                         ax_vis.set_title(f"Path at Episode {episode} ({'Success' if test_success else 'In Progress'})", color='white')
                         ax_vis.axis('off')
                         st.pyplot(fig_vis)
@@ -608,17 +609,16 @@ else:
                 st.error(f"Agent failed to find the solution after {len(path)-1} steps.")
 
             # Visualization
-            fig, ax = plt.subplots(figsize=(10, 10))
-            vis_maze = maze.copy().astype(float)
-            for i, (y, x) in enumerate(path):
-                vis_maze[y, x] = 0.3 + 0.4 * (i / len(path))
-            
-            ax.imshow(vis_maze, cmap='plasma', vmin=0, vmax=1)
+            fig, ax = plt.subplots(figsize=(10, 10), facecolor='black') # Set figure background to black
+            ax.imshow(np.zeros_like(maze), cmap='gray', vmin=0, vmax=1) # All black maze background
+
             path_y = [p[0] for p in path]
             path_x = [p[1] for p in path]
             ax.plot(path_x, path_y, '-', color='#00FFFF', linewidth=2, alpha=0.8) # Cyan path
-            ax.plot(start[1], start[0], 'go', markersize=15, label='Start')
-            ax.plot(end[1], end[0], 'ro', markersize=15, label='End')
+            # Ensure start and end markers are visible on black
+            ax.plot(start[1], start[0], 'o', color='lime', markersize=15, label='Start') # Lime green start
+            ax.plot(end[1], end[0], 'o', color='red', markersize=15, label='End') # Red end
+
             ax.set_title(f"Agent's Final Path ({'Success' if success else 'Failure'})", color='white')
             ax.axis('off')
             st.pyplot(fig)
