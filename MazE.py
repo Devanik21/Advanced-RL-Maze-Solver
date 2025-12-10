@@ -308,33 +308,23 @@ class AdvancedMazeAgent:
         state = self.start
         path = [(state, 'start')] # Store (state, move_type)
         steps = 0
-        visited = {state}
+        
+        # We REMOVED the 'visited' set. 
+        # We trust the Q-Table to get us out of dead ends.
         
         for step in range(max_steps):
+            # Pure greedy action selection
             action = self.choose_action(state, training=False)
             next_state = self.get_next_state(state, action)
-            move_type = 'good' # Assume a good move
             
-            if next_state in visited and next_state != self.end:
-                move_type = 'suboptimal' # It's a mistake to revisit a cell
-                q_values = [self.get_q_value(state, a) for a in range(len(self.actions))]
-                q_values[action] = float('-inf')
-                if max(q_values) > float('-inf'):
-                    action = q_values.index(max(q_values))
-                    corrected_next_state = self.get_next_state(state, action)
-                    if corrected_next_state == next_state: # Failed to correct, stuck in a loop
-                        move_type = 'bad'
-                    next_state = corrected_next_state
-                else: # No other option, truly stuck
-                    move_type = 'bad'
-            
-            path.append((next_state, move_type))
-            visited.add(next_state)
+            # Just record the move
+            path.append((next_state, 'good'))
             steps += 1
             state = next_state
             
             if state == self.end:
                 break
+        
         return state == self.end, [p[0] for p in path], [p[1] for p in path]
 
 
