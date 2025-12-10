@@ -124,19 +124,26 @@ class GeniusMazeAgent:
     def choose_action(self, state, training=True):
         q_values = np.array([self.get_q_value(state, a) for a in range(len(self.actions))])
         
+        # SAFETY CHECK: If Q-values contain NaNs (broken math), replace them with 0
+        if np.isnan(q_values).any():
+            q_values = np.nan_to_num(q_values)
+
         if not training:
             # Pure Greedy for testing
             max_q = np.max(q_values)
-            # Handle ties randomly to prevent getting stuck
             ties = np.flatnonzero(q_values == max_q)
+            
+            # CRASH FIX: If ties is empty (shouldn't happen with safety check, but just in case)
+            if len(ties) == 0:
+                return random.choice(range(len(self.actions)))
+                
             return np.random.choice(ties)
 
-        # Epsilon Check for forced exploration
+        # Epsilon Check
         if random.random() < self.epsilon:
             return random.choice(range(len(self.actions)))
 
-        # Boltzmann-ish selection (Temperature based on epsilon)
-        # If Q-values are all zero (start), pick random
+        # Boltzmann-ish selection
         if np.all(q_values == 0):
             return random.choice(range(len(self.actions)))
         
@@ -151,18 +158,21 @@ class GeniusMazeAgent:
 
     def get_reward(self, state, next_state):
         if next_state == self.end:
-            return 1000.0  # Massive reward for winning
+            return 1000.0
         if state == next_state:
-            return -10.0  # Harsh penalty for hitting walls
+            return -10.0
             
         # Guided Reward (Heuristic)
         current_dist = self.distance_map[state]
         next_dist = self.distance_map[next_state]
         
-        # If we move closer to target, positive reward. Further, negative.
-        # We amplify this signal to guide the agent like a magnet.
-        diff = current_dist - next_dist
-        return (10.0 * diff) - 1.0 # -1.0 is "existential pain" (time penalty)
+        # CRASH FIX: Handle Infinite distances safely
+        if np.isinf(current_dist) or np.isinf(next_dist):
+            diff = 0.0 # No gradient information available here
+        else:
+            diff = current_dist - next_dist
+            
+        return (10.0 * diff) - 1.0
 
     def train_episode(self, max_steps=500):
         state = self.start
