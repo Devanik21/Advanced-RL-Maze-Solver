@@ -329,6 +329,163 @@ class AdvancedMazeAgent:
 
 
 
+
+
+# ============================================================================
+# NEW AGENT: Dyna-Q (The Planner)
+# ============================================================================
+
+class DynaQAgent:
+    def __init__(self, maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic=True):
+        self.maze = maze
+        self.start = start
+        self.end = end
+        self.h, self.w = maze.shape
+        self.use_heuristic = use_heuristic 
+        
+        self.lr = lr
+        self.gamma = gamma
+        self.epsilon = 1.0
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
+        
+        self.q_table = {}
+        self.model = {} # Stores (state, action) -> (next_state, reward)
+        self.actions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        
+        self.episode_rewards = []
+        self.episode_steps = []
+        self.episode_success = []
+        
+        # We perform a BFS for the heuristic map (optional use)
+        self.distance_map = self._compute_distance_map()
+
+    def _compute_distance_map(self):
+        d_map = np.full((self.h, self.w), fill_value=np.inf)
+        d_map[self.end] = 0
+        queue = deque([self.end])
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        while queue:
+            cy, cx = queue.popleft()
+            current_dist = d_map[cy, cx]
+            for dy, dx in directions:
+                ny, nx = cy + dy, cx + dx
+                if 0 <= ny < self.h and 0 <= nx < self.w:
+                    if self.maze[ny, nx] == 0 and d_map[ny, nx] == np.inf:
+                        d_map[ny, nx] = current_dist + 1
+                        queue.append((ny, nx))
+        return d_map
+
+    def get_q_value(self, state, action):
+        return self.q_table.get((state, action), 0.0)
+
+    def choose_action(self, state, training=True):
+        if training and random.random() < self.epsilon:
+            return random.choice(range(len(self.actions)))
+        
+        q_values = [self.get_q_value(state, a) for a in range(len(self.actions))]
+        max_q = max(q_values)
+        # Random tie-breaking
+        best_actions = [i for i, q in enumerate(q_values) if q == max_q]
+        return random.choice(best_actions)
+
+    def get_next_state(self, state, action_idx):
+        dy, dx = self.actions[action_idx]
+        y, x = state
+        ny, nx = y + dy, x + dx
+        if 0 <= ny < self.h and 0 <= nx < self.w and self.maze[ny, nx] == 0:
+            return (ny, nx)
+        return state
+
+    def get_reward(self, state, next_state):
+        if next_state == self.end:
+            return 100.0
+        if state == next_state:
+            return -1.0
+        
+        # Dyna-Q Standard Reward: Just a small living penalty
+        # But we can add your Heuristic if enabled for speed
+        if self.use_heuristic:
+            current_dist = self.distance_map[state]
+            next_dist = self.distance_map[next_state]
+            diff = current_dist - next_dist
+            return (1.0 * diff) - 0.05
+        else:
+            return -0.05 # Standard step penalty
+
+    def train_episode(self, max_steps=500):
+        state = self.start
+        total_reward = 0
+        steps = 0
+        planning_steps = 20 # Number of planning steps per real step
+        
+        for step in range(max_steps):
+            action_idx = self.choose_action(state)
+            next_state = self.get_next_state(state, action_idx)
+            reward = self.get_reward(state, next_state)
+            
+            # 1. Direct RL Update (Q-Learning)
+            best_next_q = max([self.get_q_value(next_state, a) for a in range(len(self.actions))])
+            current_q = self.get_q_value(state, action_idx)
+            
+            new_q = current_q + self.lr * (reward + self.gamma * best_next_q - current_q)
+            self.q_table[(state, action_idx)] = new_q
+            
+            # 2. Model Learning (Remember the result)
+            self.model[(state, action_idx)] = (next_state, reward)
+            
+            # 3. Planning (Dyna-Q Hallucination)
+            # Revisit N random past experiences to reinforce learning
+            if len(self.model) > 0:
+                for _ in range(planning_steps):
+                    # Pick random previously seen state-action
+                    s_rand, a_rand = random.choice(list(self.model.keys()))
+                    ns_rand, r_rand = self.model[(s_rand, a_rand)]
+                    
+                    # Update Q-value for this hallucinated step
+                    curr_q_plan = self.get_q_value(s_rand, a_rand)
+                    best_next_q_plan = max([self.get_q_value(ns_rand, a) for a in range(len(self.actions))])
+                    
+                    upd_q = curr_q_plan + self.lr * (r_rand + self.gamma * best_next_q_plan - curr_q_plan)
+                    self.q_table[(s_rand, a_rand)] = upd_q
+
+            total_reward += reward
+            steps += 1
+            state = next_state
+            
+            if state == self.end:
+                break
+                
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        success = (state == self.end)
+        
+        self.episode_rewards.append(total_reward)
+        self.episode_steps.append(steps)
+        self.episode_success.append(success)
+        
+        return total_reward, steps, success
+
+    def test_episode(self, max_steps=500):
+        state = self.start
+        path = [(state, 'start')]
+        steps = 0
+        
+        for step in range(max_steps):
+            # Pure greedy choice
+            q_values = [self.get_q_value(state, a) for a in range(len(self.actions))]
+            max_q = max(q_values)
+            best_actions = [i for i, q in enumerate(q_values) if q == max_q]
+            action = random.choice(best_actions)
+            
+            next_state = self.get_next_state(state, action)
+            path.append((next_state, 'good'))
+            steps += 1
+            state = next_state
+            if state == self.end: break
+                
+        return state == self.end, [p[0] for p in path], [p[1] for p in path]
+
+
 # ============================================================================
 # Save/Load Utility Functions
 # ============================================================================
@@ -454,6 +611,13 @@ with st.sidebar.expander("1. Maze Generation", expanded=True):
         st.rerun()
 
 with st.sidebar.expander("2. Agent Hyperparameters", expanded=True):
+    # --- NEW: Algorithm Selector ---
+    algo_type = st.radio(
+        "Select AI Algorithm", 
+        ["SARSA + Priority (Original)", "Dyna-Q (New & Fast)"],
+        index=0
+    )
+    st.divider()
     lr = st.slider("Learning Rate (α)", 0.1, 1.0, 0.3, 0.05)
     gamma = st.slider("Discount Factor (γ)", 0.9, 0.999, 0.99, 0.001)
     epsilon_decay = st.slider("Epsilon Decay", 0.99, 0.9999, 0.9995, 0.0001, format="%.4f")
@@ -527,9 +691,31 @@ else:
 
     # Initialize or retrieve agent from session state
     # Initialize or retrieve agent from session state
+    # Initialize or retrieve agent from session state
     if 'agent' not in st.session_state or st.session_state.agent is None:
-        # Pass the toggle value here
+        if algo_type == "SARSA + Priority (Original)":
+            st.session_state.agent = AdvancedMazeAgent(
+                maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic
+            )
+        else:
+            # Instantiate the NEW Dyna-Q Agent
+            st.session_state.agent = DynaQAgent(
+                maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic
+            )
+            
+    # Check if user switched algorithm mid-session
+    # If the class type doesn't match the selection, force a reset
+    current_agent_type = type(st.session_state.agent).__name__
+    if algo_type == "SARSA + Priority (Original)" and current_agent_type != "AdvancedMazeAgent":
         st.session_state.agent = AdvancedMazeAgent(maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic)
+        st.session_state.training_history = None # Reset history on switch
+        st.toast("Switched to SARSA Agent", icon="🔄")
+        st.rerun()
+    elif algo_type == "Dyna-Q (New & Fast)" and current_agent_type != "DynaQAgent":
+        st.session_state.agent = DynaQAgent(maze, start, end, lr, gamma, epsilon_decay, epsilon_min, use_heuristic)
+        st.session_state.training_history = None # Reset history on switch
+        st.toast("Switched to Dyna-Q Agent", icon="🔄")
+        st.rerun()
 
     agent = st.session_state.agent
 
